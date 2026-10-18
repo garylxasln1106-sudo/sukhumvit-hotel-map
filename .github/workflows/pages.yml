@@ -1,0 +1,55 @@
+name: Deploy hotel map to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out site
+        uses: actions/checkout@v4
+
+      - name: Inject Mapbox public token at deploy time
+        env:
+          MAPBOX_TOKEN: ${{ secrets.MAPBOX_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          token = os.environ.get("MAPBOX_TOKEN", "").strip()
+          if not token.startswith("pk."):
+              raise SystemExit("MAPBOX_TOKEN repository secret is missing or invalid")
+          path = Path("index.html")
+          html = path.read_text()
+          marker = '"__MAPBOX_TOKEN__"'
+          if marker not in html:
+              raise SystemExit("Mapbox placeholder not found")
+          path.write_text(html.replace(marker, json.dumps(token), 1))
+          PY
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
+      - name: Deploy to Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
